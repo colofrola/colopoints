@@ -1,0 +1,1430 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Colo Points</title>
+<meta name="apple-mobile-web-app-title" content="Colo Points">
+<meta property="og:title" content="Colo Points">
+<meta property="og:site_name" content="Colo Points">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body, #root { width: 100%; height: 100%; background: #0f0a2e; }
+body { font-family: -apple-system, 'Segoe UI', sans-serif; color: #e0e7ff; overflow: hidden; }
+button { cursor: pointer; transition: transform .12s; border: none; font-family: inherit; background: none; }
+button:active { transform: scale(.95); }
+input { font-family: inherit; }
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #0f0a2e; }
+::-webkit-scrollbar-thumb { background: #312e81; border-radius: 99px; }
+@keyframes fall { to { top: 110vh; transform: rotate(720deg); } }
+@keyframes fadeIn { from { opacity:0; transform: translateX(-50%) translateY(-10px); } to { opacity:1; transform: translateX(-50%) translateY(0); } }
+@keyframes bigBounce { to { transform: scale(1.2) rotate(8deg); } }
+</style>
+<link rel="manifest" href="data:application/json,{%22name%22:%22Sistema%20de%20Puntos%22,%22short_name%22:%22Puntos%22,%22display%22:%22standalone%22,%22background_color%22:%22%230f0a2e%22,%22theme_color%22:%22%23818cf8%22,%22orientation%22:%22landscape%22,%22icons%22:[{%22src%22:%22data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%20100%20100%27%3E%3Crect%20width%3D%27100%27%20height%3D%27100%27%20rx%3D%2720%27%20fill%3D%27%231e1b4b%27/%3E%3Ctext%20y%3D%27.9em%27%20font-size%3D%2770%27%20x%3D%2715%27%3E%E2%AD%90%3C/text%3E%3C/svg%3E%22,%22sizes%22:%22192x192%22,%22type%22:%22image/svg+xml%22}]}">
+<meta name="theme-color" content="#0f0a2e">
+</head>
+<body>
+<div id="root"></div>
+<script>
+
+
+const INITIAL_REWARDS = [
+  {id:1, emoji:"🍦", name:"Elegir el postre", points:15},
+  {id:2, emoji:"🍕", name:"Elegir la cena", points:25},
+  {id:3, emoji:"🎮", name:"+30 min de pantalla", points:25},
+  {id:4, emoji:"💰", name:"Plata para alcancía", points:30},
+  {id:5, emoji:"📖", name:"Comprar un libro", points:35},
+  {id:6, emoji:"🍔", name:"Comer en el lugar que quiera", points:45},
+  {id:7, emoji:"🎬", name:"Ir al cine, museo o actividad que quiera", points:50},
+];const TASKS = [
+  {id:1, emoji:"🛏️", name:"Hacer la cama", points:2, cat:"cuarto"},
+  {id:2, emoji:"🧸", name:"Guardar juguetes", points:2, cat:"cuarto"},
+  {id:3, emoji:"👕", name:"Poner ropa sucia en tacho", points:1, cat:"cuarto"},
+  {id:4, emoji:"🎒", name:"Guardar mochila/lunchera", points:1, cat:"cuarto"},
+  {id:5, emoji:"🍽️", name:"Poner plato, vaso y cubiertos en la mesa", points:1, cat:"cocina"},
+  {id:6, emoji:"🥄", name:"Llevar plato, vaso y cubiertos a la cocina", points:1, cat:"cocina"},
+  {id:7, emoji:"🐾", name:"Darle agua/comida a la mascota", points:2, cat:"extras"},
+  {id:8, emoji:"🌱", name:"Regar las plantas", points:2, cat:"extras"},
+  {id:9, emoji:"💬", name:"Decir por favor y gracias siempre", points:1, cat:"extras"},
+  {id:10, emoji:"🌅", name:"Decir buenos días y buenas noches a todos", points:1, cat:"extras"},
+  {id:11, emoji:"🪥", name:"Lavarse los dientes", points:1, cat:"higiene"},
+  {id:12, emoji:"🧼", name:"Lavarse las manos al llegar a casa", points:1, cat:"higiene"},
+  {id:13, emoji:"🗑️", name:"Tirar la basura", points:1, cat:"casa"},
+  {id:14, emoji:"🧹", name:"Limpiar", points:4, cat:"casa"},
+];const DEFAULT_CAT_COLOR = {cuarto:"#a78bfa",higiene:"#34d399",cocina:"#fb923c",casa:"#60a5fa",extras:"#f472b6"};
+const DEFAULT_CAT_LABEL = {cuarto:"Mi cuarto",higiene:"Higiene",cocina:"Cocina",casa:"Casa",extras:"Extras"};
+const CAT_COLORS_POOL = ["#a78bfa","#34d399","#fb923c","#60a5fa","#f472b6","#fbbf24","#f87171","#38bdf8","#a3e635","#e879f9"];
+
+// ── State ──────────────────────────────────────────────────────────────────
+// ── Per-user data factory ────────────────────────────────────────────────
+function newUserData(name){
+  return {
+    name, avatar:null, points:0, debt:0, totalEarned:0,
+    completedToday:{}, history:[],
+    rewards:INITIAL_REWARDS.map(r=>({...r})),
+    tasks:TASKS.map(t=>({...t})),
+    catColor:{...DEFAULT_CAT_COLOR}, catLabel:{...DEFAULT_CAT_LABEL},
+  };
+}
+
+function avatarEl(u, size=44){
+  const s = size+"px";
+  const wrap = div({width:s,height:s,borderRadius:"50%",overflow:"hidden",flexShrink:"0",
+    border:"2px solid #818cf8",background:"#1e1b4b",display:"flex",alignItems:"center",justifyContent:"center"});
+  if(u.avatar){
+    const img = el("img",{src:u.avatar,style:{width:"100%",height:"100%",objectFit:"cover"}});
+    wrap.appendChild(img);
+  } else {
+    wrap.appendChild(span({fontSize:Math.round(size*0.5)+"px","lineHeight":s},"🌟"));
+  }
+  return wrap;
+}
+
+const S = {
+  view:"home",
+  activeUser:0,
+  pin:"0000",
+  redeemDay:5,
+  redeemHour:19,
+  newPinValue:"",
+  selectedDate:null,
+  showDatePicker:false,
+  exceptionTimer:null,
+  users:[ newUserData("Mi Campeón/a") ],
+  // UI state (not persisted per user)
+  editingName:false, tempName:"",
+  pinTarget:null, pinInput:"",
+  redeemTarget:null, redeemDetail:"",
+  loanTarget:null, loanDetail:"",
+  showEditor:false, editorNew:{emoji:"🎉",name:"",points:""},
+  editorEditing:null, editorDeleteConfirm:null,
+  showTaskEditor:false,
+  taskEditorNew:{emoji:"⭐",name:"",points:"",cat:"cuarto"},
+  taskEditorEditing:null, taskEditorDeleteConfirm:null,
+  newCatName:"", newCatColor:"#818cf8",
+  exceptionMode:false,
+  showUserManager:false, newUserName:"",
+  toast:null, toastTimer:null,
+  confetti:false, confettiTimer:null,
+  fridayShown:false,
+};
+
+// Shortcuts to active user data
+function U(){ return S.users[S.activeUser]; }
+
+// ── Persistencia localStorage ──────────────────────────────────────────────
+function saveState(){
+  try {
+    localStorage.setItem("sistemaFichas_v2", JSON.stringify({
+      users: S.users,
+      activeUser: S.activeUser,
+      pin: S.pin,
+      redeemDay: S.redeemDay,
+      redeemHour: S.redeemHour,
+    }));
+  } catch(e){}
+}
+
+function loadState(){
+  try {
+    // migrate from v1
+    const old = localStorage.getItem("sistemaFichas_v1");
+    if(old){
+      const d = JSON.parse(old);
+      const u = S.users[0];
+      if(d.points!==undefined) u.points=d.points;
+      if(d.debt!==undefined) u.debt=d.debt;
+      if(d.totalEarned!==undefined) u.totalEarned=d.totalEarned;
+      if(d.completedToday) u.completedToday=d.completedToday;
+      if(d.history) u.history=d.history;
+      if(d.childName) u.name=d.childName;
+      if(d.rewards&&d.rewards.length) u.rewards=d.rewards;
+      if(d.tasks&&d.tasks.length) u.tasks=d.tasks;
+      if(d.catColor) u.catColor=d.catColor;
+      if(d.catLabel) u.catLabel=d.catLabel;
+      localStorage.removeItem("sistemaFichas_v1");
+    }
+    const raw = localStorage.getItem("sistemaFichas_v2");
+    if(!raw) return;
+    const data = JSON.parse(raw);
+    if(data.users && data.users.length) {
+      S.users = data.users;
+      // If a user has no tasks at all, load the defaults
+      S.users.forEach(function(u){
+        if(!u.tasks || u.tasks.length === 0){
+          u.tasks = TASKS.map(function(t){return Object.assign({},t);});
+        }
+      });
+    }
+    if(data.activeUser !== undefined) S.activeUser = data.activeUser;
+    if(data.pin) S.pin = data.pin;
+    if(data.redeemDay !== undefined) S.redeemDay = data.redeemDay;
+    if(data.redeemHour !== undefined) S.redeemHour = data.redeemHour;
+  } catch(e){}
+}
+
+function todayLabel(){return new Date().toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"});}
+function workingDate(){
+  if(S.selectedDate) return S.selectedDate;
+  return todayLabel();
+}
+function workingDateObj(){
+  if(S.selectedDate){
+    // find the date object matching the label
+    var d=new Date();
+    for(var i=0;i<7;i++){
+      var test=new Date(d);test.setDate(d.getDate()-i);
+      if(test.toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"})===S.selectedDate) return test;
+    }
+  }
+  return new Date();
+}
+function isFriday(){return new Date().getDay()===S.redeemDay;}
+function isFridayEvening(){return isFriday()&&new Date().getHours()>=S.redeemHour;}
+
+function showToast(msg,emoji="⭐"){
+  if(S.toastTimer)clearTimeout(S.toastTimer);
+  S.toast={msg,emoji};
+  render();
+  S.toastTimer=setTimeout(()=>{S.toast=null;render();},2400);
+}
+function fireConfetti(){
+  if(S.confettiTimer)clearTimeout(S.confettiTimer);
+  S.confetti=true; render();
+  S.confettiTimer=setTimeout(()=>{S.confetti=false;render();},2000);
+}
+
+function fmt(n){return n===Math.floor(n)?n+"":n.toFixed(1).replace(".0","");}
+function toggleTask(task){
+  const key=workingDate()+"-"+task.id;
+  const cur=U().completedToday[key]||0; // 0, 0.5, or 1
+  let next, diff;
+  if(cur===0){next=1; diff=task.points;}
+  else if(cur===1){next=0.5; diff=-task.points/2;}
+  else{next=0; diff=-task.points/2;}
+
+  if(next===0){
+    delete U().completedToday[key];
+  } else {
+    U().completedToday[key]=next;
+  }
+
+  U().points=Math.max(0, U().points+diff);
+  if(diff>0){
+    U().totalEarned+=diff;
+    const earned=diff;
+    U().history.unshift({task:task.name+(next===0.5?" (medio)":""),emoji:task.emoji,points:earned,when:todayLabel(),type:"task"});
+    if(U().history.length>50)U().history.pop();
+    if(U().debt>0){
+      const pay=Math.min(U().debt,earned);
+      const left=earned-pay;
+      U().debt=Math.max(0,U().debt-pay); U().points=Math.max(0,U().points-(earned-left));
+      showToast("Pagaste "+fmt(pay)+"⭐ de deuda"+(left>0?" · +"+fmt(left)+"⭐":""),task.emoji);
+    } else {
+      showToast("+"+(next===0.5?fmt(task.points/2):fmt(task.points))+" puntos"+(next===0.5?" (½)":""),task.emoji);
+      if(next===1)fireConfetti();
+    }
+  } else {
+    U().totalEarned=Math.max(0,U().totalEarned+diff);
+    showToast(fmt(diff)+" puntos","↩️");
+  }
+  render();
+}
+
+function confirmRedeem(){
+  const r=S.redeemTarget;
+  if(!r||!S.redeemDetail.trim()){showToast("Escribí qué se canjea","✏️");return;}
+  U().points-=r.points;
+  U().history.unshift({task:"Canje: "+r.name,detail:S.redeemDetail.trim(),emoji:r.emoji,points:-r.points,when:todayLabel(),type:"redeem"});
+  showToast("¡Canjeado! → "+S.redeemDetail.trim(),r.emoji);
+  fireConfetti();
+  S.redeemTarget=null; S.redeemDetail="";
+  render();
+}
+
+function confirmLoan(){
+  const r=S.loanTarget;
+  if(!r||!S.loanDetail.trim()){showToast("Escribí el motivo","✏️");return;}
+  const missing=r.points-U().points;
+  U().points-=r.points; U().debt+=missing;
+  U().history.unshift({task:"Préstamo: "+r.name,detail:S.loanDetail.trim(),emoji:"🤝",points:-r.points,when:todayLabel(),type:"loan",debtAmount:missing});
+  showToast("Préstamo de "+missing+"⭐ registrado","🤝");
+  S.loanTarget=null; S.loanDetail="";
+  render();
+}
+
+function tryPin(){
+  if(S.pinInput===S.pin){
+    if(S.pinTarget==="exception"){
+      S.exceptionMode=true;
+      showToast("Modo excepción activado — 5 min","🔓");
+      if(S.exceptionTimer) clearTimeout(S.exceptionTimer);
+      S.exceptionTimer=setTimeout(function(){
+        S.exceptionMode=false;
+        S.exceptionTimer=null;
+        showToast("Modo excepción desactivado","🔒");
+        render();
+      }, 5*60*1000);
+    }
+    if(S.pinTarget==="editor"){S.showEditor=true;}
+    if(S.pinTarget==="taskEditor"){S.showTaskEditor=true;}
+    if(S.pinTarget==="userManager"){S.showUserManager=true;}
+    if(S.pinTarget==="datePicker"){S.showDatePicker=true;}
+    S.pinTarget=null; S.pinInput="";
+  } else {
+    showToast("PIN incorrecto","❌"); S.pinInput="";
+  }
+  render();
+}
+
+function saveEditorEdit(){
+  const e=S.editorEditing;
+  if(!e||!e.name.trim()){showToast("Escribí un nombre","⚠️");return;}
+  const pts=parseInt(e.points);
+  if(!pts||pts<1){showToast("Puntos inválidos","⚠️");return;}
+  U().rewards=U().rewards.map(r=>r.id===e.id?{...e,points:pts}:r).sort((a,b)=>a.points-b.points);
+  S.editorEditing=null; showToast("Premio actualizado");
+  render();
+}
+
+function addEditorNew(){
+  const n=S.editorNew;
+  if(!n.name.trim()){showToast("Escribí un nombre","⚠️");return;}
+  const pts=parseInt(n.points);
+  if(!pts||pts<1){showToast("Ponele puntos","⚠️");return;}
+  U().rewards.push({id:Date.now(),emoji:n.emoji||"🎁",name:n.name.trim(),points:pts});
+  U().rewards.sort((a,b)=>a.points-b.points);
+  S.editorNew={emoji:"🎉",name:"",points:""};
+  showToast("¡Premio agregado! 🎉"); render();
+}
+
+function deleteReward(id){
+  U().rewards=U().rewards.filter(r=>r.id!==id);
+  S.editorDeleteConfirm=null; showToast("Eliminado","🗑️"); render();
+}
+
+
+function saveTaskEdit(){
+  const e=S.taskEditorEditing;
+  if(!e||!e.name.trim()){showToast("Escribí un nombre","⚠️");return;}
+  const pts=parseInt(e.points);
+  if(!pts||pts<1){showToast("Puntos inválidos","⚠️");return;}
+  U().tasks=U().tasks.map(t=>t.id===e.id?{...e,points:pts}:t);
+  S.taskEditorEditing=null; showToast("Tarea actualizada");
+  render();
+}
+
+function addTaskNew(){
+  const n=S.taskEditorNew;
+  if(!n.name.trim()){showToast("Escribí un nombre","⚠️");return;}
+  const pts=parseInt(n.points);
+  if(!pts||pts<1){showToast("Ponele puntos","⚠️");return;}
+  U().tasks.push({id:Date.now(),emoji:n.emoji||"⭐",name:n.name.trim(),points:pts,cat:n.cat||"cuarto"});
+  S.taskEditorNew={emoji:"⭐",name:"",points:"",cat:"cuarto"};
+  showToast("¡Tarea agregada! 🎉"); render();
+}
+
+function deleteTask(id){
+  U().tasks=U().tasks.filter(t=>t.id!==id);
+  S.taskEditorDeleteConfirm=null; showToast("Tarea eliminada","🗑️"); render();
+}
+function canRedeem(){return isFriday()||S.exceptionMode;}
+function todayDone(){return U().tasks.filter(t=>U().completedToday[workingDate()+"-"+t.id]>0);}
+
+// ── HTML helpers ───────────────────────────────────────────────────────────
+function el(tag,attrs,...children){
+  const e=document.createElement(tag);
+  for(const [k,v] of Object.entries(attrs||{})){
+    if(k==="style"&&typeof v==="object"){Object.assign(e.style,v);}
+    else if(k.startsWith("on")&&typeof v==="function"){e.addEventListener(k.slice(2).toLowerCase(),v);}
+    else if(k==="cls"){e.className=v;}
+    else{e[k]=v;}
+  }
+  for(const c of children){
+    if(c==null||c===false)continue;
+    e.appendChild(typeof c==="string"?document.createTextNode(c):c);
+  }
+  return e;
+}
+function div(s,...c){return el("div",{style:s},...c);}
+function btn(s,cb,...c){return el("button",{style:s,onClick:cb},...c);}
+function inp(s,val,cb,extra){
+  const i=el("input",{style:s,...(extra||{})});
+  i.value=val;
+  i.addEventListener("input",e=>cb(e.target.value));
+  return i;
+}
+function span(s,t){return el("span",{style:s},t);}
+
+function starBar(points,max=100){
+  const pct=Math.min((Math.max(points,0)/max)*100,100);
+  const wrap=div({width:"100%",background:"#0f0a2e",borderRadius:"999px",height:"22px",overflow:"hidden",position:"relative",border:"1px solid #312e81",marginTop:"12px"});
+  wrap.appendChild(div({width:pct+"%",height:"100%",background:"linear-gradient(90deg,#818cf8,#f472b6)",borderRadius:"999px",transition:"width .6s",boxShadow:"0 0 14px #818cf888"}));
+  const lbl=span({position:"absolute",right:"10px",top:"0",fontSize:"12px",color:"#c7d2fe",lineHeight:"22px",fontWeight:"700"},fmt(points)+" ⭐");
+  wrap.appendChild(lbl);
+  return wrap;
+}
+
+function confettiEl(){
+  const wrap=div({position:"fixed",top:"0",left:"0",width:"100%",pointerEvents:"none",zIndex:"9999"});
+  for(let i=0;i<28;i++){
+    const colors=["#f472b6","#818cf8","#34d399","#fb923c","#fbbf24"];
+    const p=div({position:"absolute",left:(2+i*3.5)+"%",top:"-20px",width:(8+(i%5)*4)+"px",height:(8+(i%5)*4)+"px",background:colors[i%5],borderRadius:"3px",animation:"fall 1.6s "+(i*0.055).toFixed(2)+"s ease-in forwards"});
+    wrap.appendChild(p);
+  }
+  return wrap;
+}
+
+function toastEl(){
+  const t=S.toast;
+  const w=div({position:"fixed",top:"28px",left:"50%",transform:"translateX(-50%)",background:"#1e1b4b",border:"1.5px solid #818cf8",borderRadius:"18px",padding:"12px 28px",zIndex:"1001",fontSize:"17px",fontWeight:"700",color:"#e0e7ff",boxShadow:"0 6px 32px #818cf855",animation:"fadeIn .2s ease",display:"flex",alignItems:"center",gap:"10px",whiteSpace:"nowrap"});
+  w.appendChild(span({fontSize:"24px"},t.emoji));
+  w.appendChild(document.createTextNode(t.msg));
+  return w;
+}
+
+function modal(content,onClose,wide){
+  const overlay=div({position:"fixed",inset:"0",background:"rgba(0,0,0,0.78)",zIndex:"2000",display:"flex",alignItems:"center",justifyContent:"center",padding:"32px"});
+  const box=div({background:"#1e1b4b",border:"1.5px solid #4338ca",borderRadius:"24px",padding:"32px",width:"100%",maxWidth:wide?"680px":"460px",position:"relative",boxShadow:"0 24px 80px rgba(0,0,0,0.6)",maxHeight:"88vh",overflowY:"auto"});
+  const closeBtn=btn({position:"absolute",top:"14px",right:"18px",background:"none",color:"#818cf8",fontSize:"24px",lineHeight:"1",padding:"0"},onClose,"✕");
+  box.appendChild(closeBtn);
+  box.appendChild(content);
+  overlay.appendChild(box);
+  return overlay;
+}
+
+
+function renderEditor(){
+  const wrap=div({});
+  wrap.appendChild(div({fontWeight:"800",fontSize:"20px",color:"#c7d2fe",marginBottom:"4px"},"✏️ Editar premios"));
+  wrap.appendChild(div({fontSize:"13px",color:"#6366f1",marginBottom:"18px"},"Cambiá, agregá o eliminá premios."));
+
+  // list
+  const list=div({display:"flex",flexDirection:"column",gap:"10px",marginBottom:"22px"});
+  for(const r of U().rewards){
+    const row=div({background:"#0f0a2e",borderRadius:"14px",padding:"12px 16px",border:"1px solid #312e81"});
+    if(S.editorEditing&&S.editorEditing.id===r.id){
+      const grid=div({display:"grid",gridTemplateColumns:"52px 1fr 74px auto",gap:"10px",alignItems:"center"});
+      const iEmoji=btn({background:"#1e1b4b",border:"1px solid #4338ca",borderRadius:"8px",padding:"4px",fontSize:"26px",width:"52px",textAlign:"center"},()=>emojiPicker(e=>{S.editorEditing.emoji=e;render();}),S.editorEditing.emoji);
+      const iName=inp({background:"#1e1b4b",border:"1px solid #4338ca",borderRadius:"8px",padding:"10px 14px",color:"#fff",fontSize:"15px",outline:"none",width:"100%"},S.editorEditing.name,v=>{S.editorEditing.name=v;});
+      const iPts=inp({background:"#1e1b4b",border:"1px solid #4338ca",borderRadius:"8px",padding:"10px",color:"#fff",fontSize:"15px",textAlign:"center",outline:"none",width:"100%"},S.editorEditing.points,v=>{S.editorEditing.points=v;},{type:"number"});
+      const btns=div({display:"flex",gap:"6px"});
+      btns.appendChild(btn({background:"#34d399",borderRadius:"8px",padding:"8px 14px",color:"#fff",fontWeight:"800",fontSize:"14px"},saveEditorEdit,"✓"));
+      btns.appendChild(btn({background:"#312e81",borderRadius:"8px",padding:"8px 12px",color:"#a5b4fc",fontWeight:"700",fontSize:"14px"},()=>{S.editorEditing=null;render();},"✕"));
+      grid.appendChild(iEmoji);grid.appendChild(iName);grid.appendChild(iPts);grid.appendChild(btns);
+      row.appendChild(grid);
+    } else {
+      const line=div({display:"flex",alignItems:"center",gap:"12px"});
+      line.appendChild(span({fontSize:"28px"},r.emoji));
+      const info=div({flex:"1"});
+      info.appendChild(div({fontWeight:"700",fontSize:"15px",color:"#e0e7ff"},r.name));
+      info.appendChild(div({fontSize:"13px",color:"#6366f1"},r.points+" ⭐"));
+      line.appendChild(info);
+      line.appendChild(btn({background:"#312e81",borderRadius:"8px",padding:"7px 14px",color:"#a5b4fc",fontWeight:"700",fontSize:"13px"},()=>{S.editorEditing={...r};S.editorDeleteConfirm=null;render();},"✏️ Editar"));
+      if(S.editorDeleteConfirm===r.id){
+        const dc=div({display:"flex",gap:"6px",alignItems:"center"});
+        dc.appendChild(span({fontSize:"12px",color:"#f87171"},"¿Eliminar?"));
+        dc.appendChild(btn({background:"#f87171",borderRadius:"8px",padding:"6px 12px",color:"#fff",fontWeight:"800",fontSize:"13px"},()=>deleteReward(r.id),"Sí"));
+        dc.appendChild(btn({background:"#312e81",borderRadius:"8px",padding:"6px 10px",color:"#a5b4fc",fontWeight:"700",fontSize:"13px"},()=>{S.editorDeleteConfirm=null;render();},"No"));
+        line.appendChild(dc);
+      } else {
+        line.appendChild(btn({background:"#2a1010",border:"1px solid rgba(248,113,113,0.3)",borderRadius:"8px",padding:"7px 12px",color:"#f87171",fontWeight:"700",fontSize:"13px"},()=>{S.editorDeleteConfirm=r.id;render();},"🗑️"));
+      }
+      row.appendChild(line);
+    }
+    list.appendChild(row);
+  }
+  wrap.appendChild(list);
+
+  // add new
+  const addBox=div({background:"#0a1628",borderRadius:"16px",padding:"18px 20px",border:"1.5px dashed #4338ca"});
+  addBox.appendChild(div({fontWeight:"700",fontSize:"15px",color:"#818cf8",marginBottom:"14px"},"➕ Agregar nuevo premio"));
+  const grid2=div({display:"grid",gridTemplateColumns:"52px 1fr 74px auto",gap:"10px",alignItems:"center"});
+  const nEmoji=btn({background:"#1e1b4b",border:"1px solid #4338ca",borderRadius:"8px",padding:"4px",fontSize:"26px",width:"52px",textAlign:"center"},()=>emojiPicker(e=>{S.editorNew.emoji=e;render();}),S.editorNew.emoji);
+  const nName=inp({background:"#1e1b4b",border:"1px solid #4338ca",borderRadius:"10px",padding:"10px 14px",color:"#fff",fontSize:"15px",outline:"none",width:"100%"},S.editorNew.name,v=>{S.editorNew.name=v;},{placeholder:"Nombre del premio"});
+  const nPts=inp({background:"#1e1b4b",border:"1px solid #4338ca",borderRadius:"10px",padding:"10px",color:"#fff",fontSize:"15px",textAlign:"center",outline:"none",width:"100%"},S.editorNew.points,v=>{S.editorNew.points=v;},{type:"number",placeholder:"Pts"});
+  grid2.appendChild(nEmoji);grid2.appendChild(nName);grid2.appendChild(nPts);
+  grid2.appendChild(btn({background:"linear-gradient(135deg,#818cf8,#4338ca)",borderRadius:"10px",padding:"10px 18px",color:"#fff",fontWeight:"800",fontSize:"15px",whiteSpace:"nowrap"},addEditorNew,"+ Agregar"));
+  addBox.appendChild(grid2);
+  wrap.appendChild(addBox);
+  wrap.appendChild(btn({width:"100%",marginTop:"20px",background:"linear-gradient(135deg,#34d399,#059669)",borderRadius:"14px",padding:"14px",color:"#fff",fontWeight:"800",fontSize:"16px"},()=>{S.showEditor=false;render();},"✅ Listo"));
+  return wrap;
+}
+
+const EMOJI_LIST = ["😀","😎","🤩","🥳","😴","🤔","👍","👏","🙌","💪","🖐","✋","🤝","👶","🧒","🌟","👧","🧑","🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵","🦄","🐔","🐧","🐦","🦆","🦅","🦉","🦋","🐛","🐌","🐞","🐜","🦟","🌸","🌺","🌻","🌹","🍀","🌿","🌱","🌲","🌳","🍎","🍊","🍋","🍇","🍓","🍒","🍑","🍌","🍉","🍕","🍔","🌮","🍜","🍦","🍩","🎂","☕","🥤","⭐","🌟","✨","🔥","❄️","☀️","🌈","🌙","💧","🎈","🎉","🎁","🎮","🕹️","🎯","🎲","🏆","🥇","🎖️","🏅","⚽","🏀","🏈","⚾","🎾","🏐","🏉","🥊","🛏️","🧸","👕","📚","🪥","🧼","🍽️","🥄","🗑️","🧹","🐾","🌱","💵","📖","🏊","🍔","🎬","🎮","🛒","🚗","🚀","✈️","🏠","🏡","🌍","📱","💻","🖥️","⌚","📷","🎵","🎶","🎸","🎹","🎺","📝","✏️","📖","📚","🔑","💡","🔦","🧲","🔧","🔨","🪣","🧺","🧻","🪟","🚿","🛁","🪴","🧴","💊","🩺","❤️","🧡","💛","💚","💙","💜","🖤","🤍","🤎"];
+
+function emojiPicker(onPick){
+  const overlay=div({position:"fixed",inset:"0",background:"rgba(0,0,0,0.5)",zIndex:"3000",display:"flex",alignItems:"center",justifyContent:"center"});
+  const box=div({background:"#1e1b4b",border:"1.5px solid #4338ca",borderRadius:"20px",padding:"20px",width:"520px",maxHeight:"70vh",overflowY:"auto",position:"relative"});
+  box.appendChild(div({fontWeight:"700",fontSize:"16px",color:"#c7d2fe",marginBottom:"14px"},"Elegí un emoji"));
+  const grid=div({display:"grid",gridTemplateColumns:"repeat(10,1fr)",gap:"6px"});
+  EMOJI_LIST.forEach(e=>{
+    const b=btn({fontSize:"24px",padding:"6px",borderRadius:"8px",cursor:"pointer",background:"none",transition:"background .1s"},()=>{overlay.remove();onPick(e);},e);
+    b.addEventListener("mouseenter",()=>b.style.background="#312e81");
+    b.addEventListener("mouseleave",()=>b.style.background="none");
+    grid.appendChild(b);
+  });
+  box.appendChild(grid);
+  const closeB=btn({position:"absolute",top:"12px",right:"16px",background:"none",color:"#818cf8",fontSize:"22px",padding:"0"},()=>overlay.remove(),"✕");
+  box.appendChild(closeB);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+}
+
+function renderTaskEditor(){
+  const wrap=div({});
+  wrap.appendChild(div({fontWeight:"800",fontSize:"20px",color:"#c7d2fe",marginBottom:"4px"},"✏️ Editar tareas"));
+  wrap.appendChild(div({fontSize:"13px",color:"#6366f1",marginBottom:"18px"},"Cambiá, agregá o eliminá tareas y categorías."));
+
+  // ── Category manager ──
+  const catSection=div({background:"#0a1628",borderRadius:"14px",padding:"16px 18px",border:"1px solid #4338ca",marginBottom:"20px"});
+  catSection.appendChild(div({fontWeight:"700",fontSize:"14px",color:"#818cf8",marginBottom:"12px"},"📂 Categorías"));
+  const catGrid=div({display:"flex",flexWrap:"wrap",gap:"8px",marginBottom:"12px"});
+  for(const [key,label] of Object.entries(U().catLabel)){
+    const chip=div({background:U().catColor[key]+"33",border:"1.5px solid "+(U().catColor[key]||"#818cf8"),borderRadius:"20px",padding:"5px 14px",fontSize:"13px",fontWeight:"700",color:U().catColor[key]||"#e0e7ff",display:"flex",alignItems:"center",gap:"8px"},label);
+    // only allow deleting custom cats (not the 5 defaults)
+    const isDefault=["cuarto","higiene","cocina","casa","extras"].includes(key);
+    if(!isDefault){
+      const del=btn({background:"none",color:U().catColor[key],fontSize:"14px",padding:"0 0 0 4px"},()=>{
+        if(confirm("¿Eliminar la categoría '"+label+"'?")){
+          delete U().catColor[key]; delete U().catLabel[key];
+          // move orphan tasks to cuarto
+          U().tasks=U().tasks.map(t=>t.cat===key?{...t,cat:"cuarto"}:t);
+          render();
+        }
+      },"✕");
+      chip.appendChild(del);
+    }
+    catGrid.appendChild(chip);
+  }
+  catSection.appendChild(catGrid);
+  // add new category
+  const catRow=div({display:"flex",gap:"8px",alignItems:"center"});
+  const catInp=inp({flex:"1",background:"#1e1b4b",border:"1px solid #4338ca",borderRadius:"8px",padding:"8px 12px",color:"#fff",fontSize:"14px",outline:"none"},S.newCatName,v=>{S.newCatName=v;},{placeholder:"Nombre de la categoría"});
+  // color picker
+  const colInp=el("input",{type:"color",value:S.newCatColor,style:{width:"38px",height:"36px",borderRadius:"8px",border:"1px solid #4338ca",background:"none",cursor:"pointer",padding:"2px"}});
+  colInp.addEventListener("input",e=>{S.newCatColor=e.target.value;});
+  catRow.appendChild(catInp);
+  catRow.appendChild(colInp);
+  catRow.appendChild(btn({background:"linear-gradient(135deg,#818cf8,#4338ca)",borderRadius:"8px",padding:"8px 16px",color:"#fff",fontWeight:"800",fontSize:"14px",whiteSpace:"nowrap"},()=>{
+    const name=S.newCatName.trim();
+    if(!name){showToast("Escribí un nombre","⚠️");return;}
+    const key="cat_"+Date.now();
+    U().catLabel[key]=name;
+    U().catColor[key]=S.newCatColor;
+    S.newCatName=""; S.newCatColor="#818cf8";
+    showToast("Categoría '"+name+"' creada 🎉");
+    render();
+  },"+ Agregar"));
+  catSection.appendChild(catRow);
+  wrap.appendChild(catSection);
+
+  const CATS=Object.keys(U().catLabel);
+  const list=div({display:"flex",flexDirection:"column",gap:"10px",marginBottom:"22px"});
+  for(const t of U().tasks){
+    const row=div({background:"#0f0a2e",borderRadius:"14px",padding:"12px 16px",border:"1px solid #312e81"});
+    if(S.taskEditorEditing&&S.taskEditorEditing.id===t.id){
+      const grid=div({display:"grid",gridTemplateColumns:"56px 1fr 60px 120px auto",gap:"10px",alignItems:"center"});
+      const iE=inp({background:"#1e1b4b",border:"1px solid #4338ca",borderRadius:"8px",padding:"6px",color:"#fff",fontSize:"22px",textAlign:"center",outline:"none",width:"100%"},S.taskEditorEditing.emoji,v=>{S.taskEditorEditing.emoji=v;});
+      const iN=inp({background:"#1e1b4b",border:"1px solid #4338ca",borderRadius:"8px",padding:"10px 14px",color:"#fff",fontSize:"15px",outline:"none",width:"100%"},S.taskEditorEditing.name,v=>{S.taskEditorEditing.name=v;});
+      const iP=inp({background:"#1e1b4b",border:"1px solid #4338ca",borderRadius:"8px",padding:"10px",color:"#fff",fontSize:"15px",textAlign:"center",outline:"none",width:"100%"},S.taskEditorEditing.points,v=>{S.taskEditorEditing.points=v;},{type:"number"});
+      const sel=el("select",{style:{background:"#1e1b4b",border:"1px solid #4338ca",borderRadius:"8px",padding:"10px",color:"#fff",fontSize:"13px",outline:"none",width:"100%"}});
+      CATS.forEach(c=>{const o=el("option",{value:c},U().catLabel[c]);if(S.taskEditorEditing.cat===c)o.selected=true;sel.appendChild(o);});
+      sel.addEventListener("change",e=>{S.taskEditorEditing.cat=e.target.value;});
+      const btns=div({display:"flex",gap:"6px"});
+      btns.appendChild(btn({background:"#34d399",borderRadius:"8px",padding:"8px 14px",color:"#fff",fontWeight:"800",fontSize:"14px"},saveTaskEdit,"✓"));
+      btns.appendChild(btn({background:"#312e81",borderRadius:"8px",padding:"8px 12px",color:"#a5b4fc",fontWeight:"700",fontSize:"14px"},()=>{S.taskEditorEditing=null;render();},"✕"));
+      grid.appendChild(iE);grid.appendChild(iN);grid.appendChild(iP);grid.appendChild(sel);grid.appendChild(btns);
+      row.appendChild(grid);
+    } else {
+      const line=div({display:"flex",alignItems:"center",gap:"12px"});
+      line.appendChild(span({fontSize:"28px"},t.emoji));
+      const info=div({flex:"1"});
+      info.appendChild(div({fontWeight:"700",fontSize:"15px",color:"#e0e7ff"},t.name));
+      info.appendChild(div({fontSize:"13px",color:"#6366f1"},t.points+" ⭐ · "+U().catLabel[t.cat]));
+      line.appendChild(info);
+      line.appendChild(btn({background:"#312e81",borderRadius:"8px",padding:"7px 14px",color:"#a5b4fc",fontWeight:"700",fontSize:"13px"},()=>{S.taskEditorEditing={...t};S.taskEditorDeleteConfirm=null;render();},"✏️ Editar"));
+      if(S.taskEditorDeleteConfirm===t.id){
+        const dc=div({display:"flex",gap:"6px",alignItems:"center"});
+        dc.appendChild(span({fontSize:"12px",color:"#f87171"},"¿Eliminar?"));
+        dc.appendChild(btn({background:"#f87171",borderRadius:"8px",padding:"6px 12px",color:"#fff",fontWeight:"800",fontSize:"13px"},()=>deleteTask(t.id),"Sí"));
+        dc.appendChild(btn({background:"#312e81",borderRadius:"8px",padding:"6px 10px",color:"#a5b4fc",fontWeight:"700",fontSize:"13px"},()=>{S.taskEditorDeleteConfirm=null;render();},"No"));
+        line.appendChild(dc);
+      } else {
+        line.appendChild(btn({background:"#2a1010",border:"1px solid rgba(248,113,113,0.3)",borderRadius:"8px",padding:"7px 12px",color:"#f87171",fontWeight:"700",fontSize:"13px"},()=>{S.taskEditorDeleteConfirm=t.id;render();},"🗑️"));
+      }
+      row.appendChild(line);
+    }
+    list.appendChild(row);
+  }
+  wrap.appendChild(list);
+  const addBox=div({background:"#0a1628",borderRadius:"16px",padding:"18px 20px",border:"1.5px dashed #4338ca"});
+  addBox.appendChild(div({fontWeight:"700",fontSize:"15px",color:"#818cf8",marginBottom:"14px"},"➕ Agregar nueva tarea"));
+  const grid2=div({display:"grid",gridTemplateColumns:"52px 1fr 70px 130px auto",gap:"10px",alignItems:"center"});
+  const nE=btn({background:"#1e1b4b",border:"1px solid #4338ca",borderRadius:"8px",padding:"4px",fontSize:"26px",width:"52px",textAlign:"center"},()=>emojiPicker(e=>{S.taskEditorNew.emoji=e;render();}),S.taskEditorNew.emoji);
+  const nN=inp({background:"#1e1b4b",border:"1px solid #4338ca",borderRadius:"10px",padding:"10px 14px",color:"#fff",fontSize:"15px",outline:"none",width:"100%"},S.taskEditorNew.name,v=>{S.taskEditorNew.name=v;},{placeholder:"Nombre de la tarea"});
+  const nP=inp({background:"#1e1b4b",border:"1px solid #4338ca",borderRadius:"10px",padding:"10px",color:"#fff",fontSize:"15px",textAlign:"center",outline:"none",width:"100%"},S.taskEditorNew.points,v=>{S.taskEditorNew.points=v;},{type:"number",placeholder:"Pts"});
+  const nSel=el("select",{style:{background:"#1e1b4b",border:"1px solid #4338ca",borderRadius:"10px",padding:"10px",color:"#fff",fontSize:"13px",outline:"none",width:"100%"}});
+  CATS.forEach(c=>{const o=el("option",{value:c},U().catLabel[c]);if(S.taskEditorNew.cat===c)o.selected=true;nSel.appendChild(o);});
+  nSel.addEventListener("change",e=>{S.taskEditorNew.cat=e.target.value;});
+  grid2.appendChild(nE);grid2.appendChild(nN);grid2.appendChild(nP);grid2.appendChild(nSel);
+  grid2.appendChild(btn({background:"linear-gradient(135deg,#818cf8,#4338ca)",borderRadius:"10px",padding:"10px 18px",color:"#fff",fontWeight:"800",fontSize:"15px",whiteSpace:"nowrap"},addTaskNew,"+ Agregar"));
+  addBox.appendChild(grid2);
+  wrap.appendChild(addBox);
+  wrap.appendChild(btn({width:"100%",marginTop:"20px",background:"linear-gradient(135deg,#34d399,#059669)",borderRadius:"14px",padding:"14px",color:"#fff",fontWeight:"800",fontSize:"16px"},()=>{S.showTaskEditor=false;render();},"✅ Listo"));
+  return wrap;
+}
+
+function renderModals(root){
+  // PIN modal
+  if(S.pinTarget){
+    var label = S.pinTarget==="editor"?"Editar premios":S.pinTarget==="taskEditor"?"Editar tareas":S.pinTarget==="userManager"?"Gestionar usuarios":S.pinTarget==="datePicker"?"Cargar día anterior":"Modo excepcion";
+    var content=div({});
+    content.appendChild(div({textAlign:"center",fontSize:"56px",marginBottom:"10px"},"🔐"));
+    content.appendChild(div({fontWeight:"800",fontSize:"22px",color:"#c7d2fe",textAlign:"center",marginBottom:"6px"},label));
+    content.appendChild(div({fontSize:"15px",color:"#818cf8",textAlign:"center",marginBottom:"20px"},"Solo para papas / mamas"));
+    var pi=inp({width:"100%",background:"#0f0a2e",border:"1.5px solid #4338ca",borderRadius:"12px",padding:"12px 16px",color:"#fff",fontSize:"28px",textAlign:"center",letterSpacing:"14px",outline:"none",marginBottom:"18px"},S.pinInput,function(v){S.pinInput=v;},{type:"password",maxLength:"4"});
+    pi.addEventListener("keydown",function(e){if(e.key==="Enter")tryPin();});
+    setTimeout(function(){pi.focus();},50);
+    content.appendChild(pi);
+    content.appendChild(btn({width:"100%",background:"linear-gradient(135deg,#818cf8,#4338ca)",borderRadius:"14px",padding:"16px",color:"#fff",fontWeight:"800",fontSize:"17px"},tryPin,"🔓 Desbloquear"));
+    root.appendChild(modal(content,function(){S.pinTarget=null;S.pinInput="";render();}));
+  }
+  if(S.showEditor){
+    root.appendChild(modal(renderEditor(),function(){S.showEditor=false;render();},true));
+  }
+  if(S.showTaskEditor){
+    root.appendChild(modal(renderTaskEditor(),function(){S.showTaskEditor=false;render();},true));
+  }
+  if(S.showUserManager){
+    var c2=div({});
+    c2.appendChild(div({fontWeight:"800",fontSize:"20px",color:"#c7d2fe",marginBottom:"4px"},"👤 Usuarios"));
+    c2.appendChild(div({fontSize:"13px",color:"#6366f1",marginBottom:"18px"},"Cada usuario tiene sus propios puntos, tareas e historial."));
+    var ul2=div({display:"flex",flexDirection:"column",gap:"10px",marginBottom:"20px"});
+    S.users.forEach(function(u,i){
+      var row=div({background:"#0f0a2e",borderRadius:"12px",padding:"12px 16px",display:"flex",alignItems:"center",gap:"12px",border:i===S.activeUser?"1.5px solid #818cf8":"1px solid #312e81"});
+      var mgAv=avatarEl(u,40);
+      mgAv.style.cursor="pointer";
+      mgAv.addEventListener("click",(function(usr){return function(){
+        var fi=el("input",{type:"file",accept:"image/*",style:{display:"none"}});
+        fi.addEventListener("change",function(e){var f=e.target.files[0];if(!f)return;var r2=new FileReader();r2.onload=function(ev){openCropper(ev.target.result,function(c){usr.avatar=c;render();});};r2.readAsDataURL(f);});
+        document.body.appendChild(fi);fi.click();setTimeout(function(){fi.remove();},60000);
+      };})(u));
+      row.appendChild(mgAv);
+      var info=div({flex:"1"});
+      info.appendChild(div({fontWeight:"700",fontSize:"15px",color:"#e0e7ff"},u.name+(i===S.activeUser?" (activo)":"")));
+      info.appendChild(div({fontSize:"12px",color:"#6366f1"},fmt(u.points)+" ⭐ · "+fmt(u.totalEarned)+" pts ganados"));
+      row.appendChild(info);
+      row.appendChild(btn({background:"#1e1b4b",border:"1px solid #4338ca",borderRadius:"8px",padding:"6px 12px",color:"#818cf8",fontWeight:"700",fontSize:"13px"},(function(usr){return function(){
+        var val=prompt("Puntos de "+usr.name+"\nIngresa el nuevo saldo:",Math.round(usr.points));
+        if(val===null)return;
+        var pts=parseFloat(val);
+        if(isNaN(pts)){showToast("Numero invalido","❌");return;}
+        usr.points=Math.max(0,pts);
+        showToast(usr.name+": "+fmt(pts)+" ⭐","✅");
+        render();
+      };})(u),"✏️ Pts"));
+      if(i!==S.activeUser){
+        row.appendChild(btn({background:"#312e81",borderRadius:"8px",padding:"6px 14px",color:"#a5b4fc",fontWeight:"700",fontSize:"13px"},(function(idx2){return function(){S.activeUser=idx2;S.showUserManager=false;render();};})(i),"Cambiar"));
+        row.appendChild(btn({background:"#2a1010",border:"1px solid rgba(248,113,113,0.3)",borderRadius:"8px",padding:"6px 10px",color:"#f87171",fontWeight:"700",fontSize:"13px"},(function(idx2){return function(){
+          if(confirm("Eliminar a "+S.users[idx2].name+"?")){S.users.splice(idx2,1);if(S.activeUser>=S.users.length)S.activeUser=0;render();}
+        };})(i),"🗑️"));
+      }
+      ul2.appendChild(row);
+    });
+    c2.appendChild(ul2);
+    var addRow=div({background:"#0a1628",borderRadius:"14px",padding:"16px 18px",border:"1.5px dashed #4338ca",marginBottom:"16px"});
+    addRow.appendChild(div({fontWeight:"700",fontSize:"14px",color:"#818cf8",marginBottom:"12px"},"➕ Agregar usuario"));
+    var ni=inp({width:"100%",background:"#1e1b4b",border:"1px solid #4338ca",borderRadius:"8px",padding:"10px 14px",color:"#fff",fontSize:"15px",outline:"none",marginBottom:"12px"},S.newUserName,function(v){S.newUserName=v;},{placeholder:"Nombre (ej: Facundo)"});
+    addRow.appendChild(ni);
+    addRow.appendChild(btn({width:"100%",background:"linear-gradient(135deg,#818cf8,#4338ca)",borderRadius:"10px",padding:"12px",color:"#fff",fontWeight:"800",fontSize:"15px"},function(){
+      var name=S.newUserName.trim();
+      if(!name){showToast("Escribi un nombre","⚠️");return;}
+      S.users.push(newUserData(name));S.newUserName="";showToast("Agregado: "+name,"🌟");render();
+    },"+ Agregar usuario"));
+    c2.appendChild(addRow);
+    // Redeem day/hour config
+    var daySec=div({background:"#0a1628",borderRadius:"14px",padding:"16px 18px",border:"1px solid #4338ca",marginBottom:"16px"});
+    daySec.appendChild(div({fontWeight:"700",fontSize:"14px",color:"#818cf8",marginBottom:"12px"},"📅 Día y hora de canje"));
+    var dayRow=div({display:"flex",gap:"10px",alignItems:"center",marginBottom:"8px"});
+    dayRow.appendChild(div({fontSize:"13px",color:"#a5b4fc",whiteSpace:"nowrap"},"Día:"));
+    var daySel=el("select",{style:{flex:"1",background:"#1e1b4b",border:"1px solid #4338ca",borderRadius:"8px",padding:"8px 10px",color:"#fff",fontSize:"14px",outline:"none"}});
+    var dayNames=["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
+    dayNames.forEach(function(d,i){
+      var o=el("option",{value:String(i)},d);
+      if(i===S.redeemDay) o.selected=true;
+      daySel.appendChild(o);
+    });
+    daySel.addEventListener("change",function(e){S.redeemDay=parseInt(e.target.value);saveState();showToast("Día actualizado","📅");});
+    dayRow.appendChild(daySel);
+    daySec.appendChild(dayRow);
+    var hourRow=div({display:"flex",gap:"10px",alignItems:"center"});
+    hourRow.appendChild(div({fontSize:"13px",color:"#a5b4fc",whiteSpace:"nowrap"},"Hora:"));
+    var hourSel=el("select",{style:{flex:"1",background:"#1e1b4b",border:"1px solid #4338ca",borderRadius:"8px",padding:"8px 10px",color:"#fff",fontSize:"14px",outline:"none"}});
+    for(var h=0;h<24;h++){
+      var o2=el("option",{value:String(h)},h+"hs");
+      if(h===S.redeemHour) o2.selected=true;
+      hourSel.appendChild(o2);
+    }
+    hourSel.addEventListener("change",function(e){S.redeemHour=parseInt(e.target.value);saveState();showToast("Hora actualizada","🕐");});
+    hourRow.appendChild(hourSel);
+    daySec.appendChild(hourRow);
+    daySec.appendChild(div({fontSize:"11px",color:"#4338ca",marginTop:"8px"},"Actualmente: "+dayNames[S.redeemDay]+" a las "+S.redeemHour+"hs"));
+    c2.appendChild(daySec);
+
+    var pinSec=div({background:"#0a1628",borderRadius:"14px",padding:"16px 18px",border:"1px solid #4338ca",marginBottom:"16px"});
+    pinSec.appendChild(div({fontWeight:"700",fontSize:"14px",color:"#818cf8",marginBottom:"12px"},"🔐 Cambiar PIN de padres"));
+    var pinHint=div({fontSize:"12px",color:"#4338ca",marginTop:"8px"});
+    pinHint.textContent="PIN actual: "+S.pin.split("").map(function(){return "●";}).join("");
+    var pinRow=div({display:"flex",gap:"10px",alignItems:"center"});
+    var pinInp=el("input",{type:"password",style:{flex:"1",background:"#1e1b4b",border:"1px solid #4338ca",borderRadius:"8px",padding:"8px 10px",color:"#fff",fontSize:"14px",textAlign:"center",letterSpacing:"4px",outline:"none"},placeholder:"Nuevo PIN"});
+    pinInp.maxLength=4;
+    pinInp.value=S.newPinValue;
+    pinInp.addEventListener("input",function(e){S.newPinValue=e.target.value;});
+    pinRow.appendChild(pinInp);
+    pinRow.appendChild(btn({background:"linear-gradient(135deg,#818cf8,#4338ca)",borderRadius:"10px",padding:"10px 18px",color:"#fff",fontWeight:"800",fontSize:"14px",whiteSpace:"nowrap"},function(){
+      var val=S.newPinValue.trim();
+      if(!val||val.length<4){showToast("PIN debe tener 4 digitos","⚠️");return;}
+      S.pin=val;S.newPinValue="";showToast("PIN actualizado ✓","🔐");saveState();render();
+    },"Guardar"));
+    pinSec.appendChild(pinRow);
+    pinSec.appendChild(pinHint);
+    c2.appendChild(pinSec);
+    c2.appendChild(btn({width:"100%",background:"linear-gradient(135deg,#34d399,#059669)",borderRadius:"14px",padding:"14px",color:"#fff",fontWeight:"800",fontSize:"16px"},function(){S.showUserManager=false;render();},"✅ Listo"));
+    root.appendChild(modal(c2,function(){S.showUserManager=false;render();}));
+  }
+  if(S.showDatePicker){
+    var dc=div({});
+    dc.appendChild(div({fontWeight:"800",fontSize:"20px",color:"#c7d2fe",marginBottom:"4px"},"📅 Cargar día anterior"));
+    dc.appendChild(div({fontSize:"13px",color:"#6366f1",marginBottom:"18px"},"Elegí el día que querés cargar. Las tareas que marques se guardan en ese día."));
+    var dayBtns=div({display:"flex",flexDirection:"column",gap:"10px",marginBottom:"20px"});
+    var today=new Date();
+    for(var i=1;i<=7;i++){
+      var d=new Date(today);
+      d.setDate(today.getDate()-i);
+      var lbl=d.toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"});
+      var isSelected=S.selectedDate===lbl;
+      (function(dayLbl){
+        var b=btn({
+          width:"100%",background:isSelected?"linear-gradient(135deg,#818cf8,#4338ca)":"#0f0a2e",
+          border:isSelected?"none":"1px solid #312e81",
+          borderRadius:"12px",padding:"14px 18px",
+          color:isSelected?"#fff":"#a5b4fc",
+          fontWeight:"700",fontSize:"15px",textAlign:"left",
+          textTransform:"capitalize"
+        },function(){
+          S.selectedDate=dayLbl;
+          S.showDatePicker=false;
+          showToast("Cargando: "+dayLbl,"📅");
+          render();
+        },dayLbl);
+        dayBtns.appendChild(b);
+      })(lbl);
+    }
+    dc.appendChild(dayBtns);
+    if(S.selectedDate){
+      dc.appendChild(btn({width:"100%",background:"#2a1010",border:"1px solid #f87171",borderRadius:"12px",padding:"12px",color:"#f87171",fontWeight:"700",fontSize:"14px",marginBottom:"10px"},function(){
+        S.selectedDate=null;S.showDatePicker=false;render();
+      },"✕ Volver a hoy"));
+    }
+    dc.appendChild(btn({width:"100%",background:"linear-gradient(135deg,#34d399,#059669)",borderRadius:"12px",padding:"13px",color:"#fff",fontWeight:"800",fontSize:"15px"},function(){S.showDatePicker=false;render();},"✅ Cerrar"));
+    root.appendChild(modal(dc,function(){S.showDatePicker=false;render();}));
+  }
+
+  if(S.redeemTarget){
+    var r=S.redeemTarget;
+    var rc=div({});
+    rc.appendChild(div({textAlign:"center",fontSize:"64px"},r.emoji));
+    rc.appendChild(div({fontWeight:"800",fontSize:"22px",color:"#c7d2fe",textAlign:"center",marginTop:"10px"},r.name));
+    rc.appendChild(div({fontSize:"15px",color:"#818cf8",textAlign:"center",marginTop:"6px",marginBottom:"20px"},"Cuesta "+r.points+" ⭐"));
+    rc.appendChild(div({fontSize:"15px",color:"#c7d2fe",fontWeight:"600",marginBottom:"10px"},"Por que exactamente lo canjas?"));
+    var ri=inp({width:"100%",background:"#0f0a2e",border:"1.5px solid #4338ca",borderRadius:"12px",padding:"12px 16px",color:"#fff",fontSize:"16px",outline:"none",marginBottom:"20px"},S.redeemDetail,function(v){S.redeemDetail=v;},{placeholder:"Ej: helado de dulce de leche"});
+    ri.addEventListener("keydown",function(e){if(e.key==="Enter")confirmRedeem();});
+    setTimeout(function(){ri.focus();},50);
+    rc.appendChild(ri);
+    rc.appendChild(btn({width:"100%",background:"linear-gradient(135deg,#34d399,#059669)",borderRadius:"14px",padding:"16px",color:"#fff",fontWeight:"800",fontSize:"17px"},confirmRedeem,"✅ Confirmar canje"));
+    root.appendChild(modal(rc,function(){S.redeemTarget=null;S.redeemDetail="";render();}));
+  }
+  if(S.loanTarget){
+    var rl=S.loanTarget;
+    var lc=div({});
+    lc.appendChild(div({textAlign:"center",fontSize:"64px"},"🤝"));
+    lc.appendChild(div({fontWeight:"800",fontSize:"22px",color:"#c7d2fe",textAlign:"center",marginTop:"10px"},"Prestamo de puntos"));
+    lc.appendChild(div({fontSize:"15px",color:"#818cf8",textAlign:"center",marginTop:"6px"},rl.name+" · "+rl.points+" ⭐"));
+    lc.appendChild(div({margin:"12px 0 20px",background:"#7f1d1d",color:"#fca5a5",borderRadius:"12px",padding:"10px 16px",fontSize:"15px",fontWeight:"700",textAlign:"center"},"Va a deber "+fmt(Math.max(0,rl.points-U().points))+" ⭐"));
+    lc.appendChild(div({fontSize:"15px",color:"#c7d2fe",fontWeight:"600",marginBottom:"10px"},"Por que es el prestamo?"));
+    var li2=inp({width:"100%",background:"#0f0a2e",border:"1.5px solid #4338ca",borderRadius:"12px",padding:"12px 16px",color:"#fff",fontSize:"16px",outline:"none",marginBottom:"14px"},S.loanDetail,function(v){S.loanDetail=v;},{placeholder:"Ej: helado antes de juntar los puntos"});
+    li2.addEventListener("keydown",function(e){if(e.key==="Enter")confirmLoan();});
+    setTimeout(function(){li2.focus();},50);
+    lc.appendChild(li2);
+    lc.appendChild(div({fontSize:"13px",color:"#f87171",marginBottom:"18px",lineHeight:"1.6",background:"#1a0a0a",borderRadius:"10px",padding:"10px 14px"},"Las proximas tareas pagaran la deuda automaticamente."));
+    lc.appendChild(btn({width:"100%",background:"linear-gradient(135deg,#f472b6,#db2777)",borderRadius:"14px",padding:"16px",color:"#fff",fontWeight:"800",fontSize:"17px"},confirmLoan,"🤝 Confirmar prestamo"));
+    root.appendChild(modal(lc,function(){S.loanTarget=null;S.loanDetail="";render();}));
+  }
+}
+
+
+function renderSidebar(){
+  const sid=div({width:"260px",flexShrink:"0",background:"linear-gradient(180deg,#1e1b4b 0%,#12103a 100%)",borderRight:"1px solid #312e81",display:"flex",flexDirection:"column",height:"100vh"});
+
+  // name
+  const header=div({padding:"12px 14px 8px"});
+  header.appendChild(div({fontSize:"11px",color:"#6366f1",fontWeight:"700",letterSpacing:"2px",textTransform:"uppercase",marginBottom:"8px"},"⭐ Colo Points"));
+  if(S.editingName){
+    const row=div({display:"flex",gap:"6px",alignItems:"center"});
+    const i=inp({background:"#312e81",border:"1px solid #818cf8",borderRadius:"8px",padding:"6px 10px",color:"#fff",fontSize:"17px",fontWeight:"700",width:"100%",outline:"none"},S.tempName,v=>{S.tempName=v;});
+    i.addEventListener("keydown",e=>{if(e.key==="Enter"){U().name=S.tempName||U().name;S.editingName=false;render();}});
+    setTimeout(()=>i.focus(),50);
+    row.appendChild(i);
+    row.appendChild(btn({background:"#818cf8",borderRadius:"8px",padding:"6px 12px",color:"#fff",fontWeight:"700",fontSize:"16px"},()=>{U().name=S.tempName||U().name;S.editingName=false;render();},"✓"));
+    header.appendChild(row);
+  } else {
+    const nm=div({fontSize:"24px",fontWeight:"900",cursor:"pointer",display:"flex",alignItems:"center",gap:"8px"},U().name+" ",span({fontSize:"16px",color:"#6366f1"},"✏️"));
+    nm.addEventListener("click",()=>{S.tempName=U().name;S.editingName=true;render();});
+    header.appendChild(nm);
+  }
+  sid.appendChild(header);
+
+  // points
+  const pb=div({margin:"0 10px 8px",background:"#0f0a2e",borderRadius:"12px",padding:"10px 12px",border:"1px solid #312e81"});
+  pb.appendChild(div({fontSize:"11px",color:"#6366f1",fontWeight:"700",letterSpacing:"1px",marginBottom:"4px"},"PUNTOS DISPONIBLES"));
+  const pnum=div({fontSize:"48px",fontWeight:"900",lineHeight:"1",color:U().points<0?"#f87171":"#fbbf24"},fmt(U().points),span({fontSize:"28px",marginLeft:"6px"},"⭐"));
+  pb.appendChild(pnum);
+  if(U().debt>0)pb.appendChild(div({marginTop:"8px",fontSize:"13px",color:"#f87171",fontWeight:"700",background:"#2a1010",borderRadius:"8px",padding:"4px 10px",display:"inline-block"},"💸 Debe "+fmt(U().debt)+" ⭐"));
+  pb.appendChild(starBar(U().points));
+  pb.appendChild(div({marginTop:"8px",fontSize:"12px",color:"#4338ca"},"🏆 Total ganado: "+fmt(U().totalEarned)+" pts"));
+  sid.appendChild(pb);
+
+  // user switcher
+  const usw=div({margin:"0 16px 14px"});
+  const urow=div({display:"flex",gap:"6px",flexWrap:"wrap"});
+  S.users.forEach((u,i)=>{
+    const active=i===S.activeUser;
+    var ubBorder = active ? "2px solid #818cf8" : "2px solid #312e81";
+    const ub=btn({
+      background:active?"linear-gradient(135deg,#818cf8,#4338ca)":"#0f0a2e",
+      border:ubBorder,
+      borderRadius:"50px",padding:"4px 12px 4px 4px",
+      color:active?"#fff":"#6366f1",fontSize:"13px",fontWeight:"700",
+      transition:"all .2s",display:"flex",alignItems:"center",gap:"6px"
+    },()=>{S.activeUser=i;render();});
+    ub.appendChild(avatarEl(u,26));
+    ub.appendChild(document.createTextNode(u.name));
+    urow.appendChild(ub);
+  });
+  // add user button
+  urow.appendChild(btn({
+    background:"none",border:"1px dashed #4338ca",borderRadius:"20px",
+    padding:"5px 12px",color:"#4338ca",fontSize:"13px",fontWeight:"700"
+  },()=>{if(S.exceptionMode){S.showUserManager=true;render();}else{S.pinTarget="userManager";S.pinInput="";render();}},"+"));
+  usw.appendChild(urow);
+  sid.appendChild(usw);
+
+  // today
+  const done=todayDone();
+  const tb=div({margin:"0 10px 8px",background:"#0f0a2e",borderRadius:"10px",padding:"8px 10px",border:"1px solid #312e81"});
+  tb.appendChild(div({fontSize:"11px",color:"#6366f1",fontWeight:"700",letterSpacing:"1px",marginBottom:"6px"},"HOY · "+done.length+" TAREAS"));
+  if(done.length===0){tb.appendChild(div({fontSize:"12px",color:"#4338ca"},"Ninguna todavía..."));}
+  else{const emojis=div({display:"flex",flexWrap:"wrap",gap:"4px"});done.forEach(t=>emojis.appendChild(span({fontSize:"20px"},t.emoji)));tb.appendChild(emojis);}
+  sid.appendChild(tb);
+
+  // nav
+  const nav=div({padding:"0 8px",marginBottom:"4px"});
+  for(const n of [{id:"home",emoji:"🏠",label:"Inicio"},{id:"tasks",emoji:"✅",label:"Tareas"},{id:"rewards",emoji:"🎁",label:"Premios"},{id:"history",emoji:"📋",label:"Historial"}]){
+    const active=S.view===n.id;
+    const b=btn({width:"100%",display:"flex",alignItems:"center",gap:"14px",background:active?"linear-gradient(135deg,rgba(49,46,129,0.5),#1e1b4b)":"none",border:active?"1px solid #4338ca":"1px solid transparent",borderRadius:"12px",padding:"14px 16px",color:active?"#c7d2fe":"#4338ca",marginBottom:"4px",textAlign:"left",transition:"all .2s"},()=>{S.view=n.id;render();},span({fontSize:"22px"},n.emoji),span({fontWeight:"700",fontSize:"14px"},n.label));
+    if(active)b.appendChild(div({marginLeft:"auto",width:"6px",height:"6px",background:"#818cf8",borderRadius:"50%"}));
+    nav.appendChild(b);
+  }
+  // Date picker - between Historial and Instrucciones
+  var dateActive=!!S.selectedDate;
+  var dateLbl=S.selectedDate?S.selectedDate.split(",")[0]:"Día anterior";
+  var dateNavBtn=btn({width:"100%",display:"flex",alignItems:"center",gap:"14px",background:dateActive?"linear-gradient(135deg,rgba(251,191,36,0.15),#1e1b4b)":"none",border:dateActive?"1px solid #fbbf24":"1px solid transparent",borderRadius:"12px",padding:"14px 16px",color:dateActive?"#fbbf24":"#4338ca",marginBottom:"4px",textAlign:"left",transition:"all .2s"},()=>{S.pinTarget="datePicker";S.pinInput="";render();},span({fontSize:"22px"},"📅"),span({fontWeight:"700",fontSize:"14px"},dateLbl));
+  if(dateActive)dateNavBtn.appendChild(div({marginLeft:"auto",width:"6px",height:"6px",background:"#fbbf24",borderRadius:"50%"}));
+  nav.appendChild(dateNavBtn);
+  if(S.selectedDate){
+    var backBtn=btn({width:"100%",display:"flex",alignItems:"center",gap:"14px",background:"none",border:"1px solid transparent",borderRadius:"12px",padding:"6px 16px",color:"#6366f1",marginBottom:"4px",textAlign:"left"},()=>{S.selectedDate=null;render();},span({fontSize:"22px"},"✕"),span({fontWeight:"600",fontSize:"13px"},"Volver a hoy"));
+    nav.appendChild(backBtn);
+  }
+  // Instrucciones last
+  var infoActive=S.view==="info";
+  var infoBtn=btn({width:"100%",display:"flex",alignItems:"center",gap:"14px",background:infoActive?"linear-gradient(135deg,rgba(49,46,129,0.5),#1e1b4b)":"none",border:infoActive?"1px solid #4338ca":"1px solid transparent",borderRadius:"12px",padding:"14px 16px",color:infoActive?"#c7d2fe":"#4338ca",marginBottom:"4px",textAlign:"left",transition:"all .2s"},()=>{S.view="info";render();},span({fontSize:"22px"},"📖"),span({fontWeight:"700",fontSize:"14px"},"Instrucciones"));
+  if(infoActive)infoBtn.appendChild(div({marginLeft:"auto",width:"6px",height:"6px",background:"#818cf8",borderRadius:"50%"}));
+  nav.appendChild(infoBtn);
+  sid.appendChild(nav);
+
+  // exception
+  const bot=div({padding:"6px 12px 12px",display:"flex",flexDirection:"column",gap:"4px"});
+  if(!S.exceptionMode){
+    bot.appendChild(btn({width:"100%",background:"#1e1b4b",border:"1px solid #4338ca",borderRadius:"8px",padding:"7px 10px",color:"#818cf8",fontSize:"12px",fontWeight:"700"},()=>{S.pinTarget="exception";S.pinInput="";render();},"🔐 Modo excepción"));
+  } else {
+    bot.appendChild(btn({width:"100%",background:"rgba(244,114,182,0.07)",border:"1px solid #f472b6",borderRadius:"8px",padding:"7px 10px",color:"#f472b6",fontSize:"12px",fontWeight:"700"},()=>{S.exceptionMode=false;if(S.exceptionTimer){clearTimeout(S.exceptionTimer);S.exceptionTimer=null;}render();},"🔓 Desactivar excepción"));
+  }
+  if(isFriday())bot.appendChild(div({color:"#fbbf24",fontWeight:"700",fontSize:"12px",textAlign:"center",marginTop:"2px"},"🎉 ¡Es "+["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"][S.redeemDay]+"!"));
+  sid.appendChild(bot);
+  return sid;
+}
+
+function safeNode(x, label){
+  if(x instanceof Node) return x;
+  var d = document.createElement("span");
+  d.style.color = "#f87171";
+  d.textContent = "[ERR:"+label+"="+typeof x+"]";
+  return d;
+}
+
+function renderMain(){
+  const main=div({flex:"1",overflowY:"auto",padding:"32px 36px"});
+
+  // ── HOME ──────────────────────────────────────────────────────────────────
+  if(S.view==="home"){
+    // Greeting
+    const greetRow=div({display:"flex",alignItems:"center",gap:"16px",marginBottom:"24px"});
+    greetRow.appendChild(safeNode(avatarEl(U(),56),"avatar"));
+    const greetText=div({});
+    greetText.appendChild(div({fontSize:"26px",fontWeight:"800",color:"#c7d2fe"},"\uD83D\uDC4B \u00A1Hola, "+U().name+"!"));
+    greetText.appendChild(div({fontSize:"15px",color:"#6366f1",fontWeight:"500",marginTop:"2px"},todayLabel()));
+    greetRow.appendChild(greetText);
+    main.appendChild(greetRow);
+
+    // Debt warning
+    if(U().debt>0){
+      const db=div({background:"#2a1010",border:"2px solid #f87171",borderRadius:"16px",padding:"16px 20px",marginBottom:"24px"});
+      db.appendChild(div({fontWeight:"800",color:"#f87171",fontSize:"16px",marginBottom:"4px"},"\uD83D\uDCB8 Deuda pendiente: "+fmt(U().debt)+" \u2B50"));
+      db.appendChild(div({color:"#fca5a5",fontSize:"14px"},"Las pr\u00F3ximas tareas ir\u00E1n saldando la deuda autom\u00E1ticamente."));
+      main.appendChild(db);
+    }
+
+    // Two column grid
+    const grid=div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"24px"});
+
+    // Left: today done
+    const left=div({});
+    left.appendChild(div({fontSize:"14px",fontWeight:"700",color:"#a5b4fc",letterSpacing:"1px",textTransform:"uppercase",marginBottom:"14px"},"\u2705 Tareas de hoy"));
+    const done=todayDone();
+    if(done.length===0){
+      left.appendChild(div({background:"#1e1b4b",borderRadius:"16px",padding:"28px",textAlign:"center",border:"1px solid #312e81",color:"#4338ca",fontSize:"15px"},"\u00A1Todav\u00EDa ninguna! And\u00E1 a Tareas \u2192"));
+    } else {
+      const lst=div({display:"flex",flexDirection:"column",gap:"10px"});
+      done.forEach(function(t){
+        const r=div({background:"#1e1b4b",borderRadius:"14px",padding:"12px 16px",display:"flex",alignItems:"center",gap:"12px",border:"1px solid #312e81"});
+        r.appendChild(div({fontSize:"28px"},t.emoji));
+        r.appendChild(div({flex:"1",fontWeight:"600",fontSize:"15px"},t.name));
+        var ptVal=(U().completedToday[workingDate()+"-"+t.id]===0.5?"+"+fmt(t.points/2):"+"+fmt(t.points))+"\u2B50";
+        r.appendChild(div({color:"#fbbf24",fontWeight:"800",fontSize:"15px"},ptVal));
+        lst.appendChild(r);
+      });
+      left.appendChild(lst);
+    }
+    grid.appendChild(left);
+
+    // Right: rewards preview
+    const right=div({});
+    right.appendChild(div({fontSize:"14px",fontWeight:"700",color:"#a5b4fc",letterSpacing:"1px",textTransform:"uppercase",marginBottom:"14px"},"\uD83C\uDFAF Premios al alcance"));
+    const rlst=div({display:"flex",flexDirection:"column",gap:"10px"});
+    U().rewards.filter(function(r){return r.points<=Math.max(U().points,0)+60;}).slice(0,4).forEach(function(r){
+      const has=U().points>=r.points;
+      const row=div({background:has?"#0d1f0d":"#1e1b4b",borderRadius:"14px",padding:"12px 16px",display:"flex",alignItems:"center",gap:"12px",border:has?"2px solid #34d399":"1px solid #312e81"});
+      row.appendChild(div({fontSize:"28px"},r.emoji));
+      const info=div({flex:"1"});
+      info.appendChild(div({fontWeight:"700",fontSize:"15px"},r.name));
+      info.appendChild(div({fontSize:"12px",color:"#6366f1"},r.points+" \u2B50"));
+      row.appendChild(info);
+      if(has&&canRedeem()){
+        row.appendChild(btn({background:"linear-gradient(135deg,#34d399,#059669)",borderRadius:"10px",padding:"8px 16px",color:"#fff",fontWeight:"800",fontSize:"14px"},function(){S.redeemTarget=r;S.redeemDetail="";render();},"Canjear"));
+      } else {
+        const flt=div({color:"#4338ca",fontSize:"13px",textAlign:"right"});
+        flt.appendChild(document.createTextNode("Faltan"));
+        flt.appendChild(el("br",{}));
+        flt.appendChild(el("strong",{style:{color:"#818cf8"}},fmt(Math.max(0,r.points-U().points))+" pts"));
+        row.appendChild(flt);
+      }
+      rlst.appendChild(row);
+    });
+    right.appendChild(rlst);
+    grid.appendChild(right);
+    main.appendChild(grid);
+
+    // Tips
+    const tips=div({background:"#1e1b4b",borderRadius:"16px",padding:"18px 22px",marginTop:"28px",border:"1px solid #312e81"});
+    tips.appendChild(div({fontWeight:"700",fontSize:"14px",color:"#f472b6",marginBottom:"10px"},"\uD83D\uDCA1 Recordatorios para pap\u00E1s"));
+    const tipTexts=["Canjes habilitados los viernes","Los viernes a las 19hs hay celebraci\u00F3n \uD83C\uDF89","Los pr\u00E9stamos se saldan con las pr\u00F3ximas tareas","Edit\u00E1 los premios desde Premios con el PIN \u270F\uFE0F"];
+    const tgrid=div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 24px",fontSize:"13px",color:"#818cf8",lineHeight:"1.7"});
+    tipTexts.forEach(function(t){ tgrid.appendChild(div({},"\u2022 "+t)); });
+    tips.appendChild(tgrid);
+    main.appendChild(tips);
+  }
+
+  // ── TASKS ────────────────────────────────────────────────────────────────
+  if(S.view==="tasks"){
+    const thdr=div({display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"24px"});
+    thdr.appendChild(div({fontSize:"26px",fontWeight:"800",color:"#c7d2fe"},"\u2705 Tareas del d\u00EDa"));
+    thdr.appendChild(btn({background:"#1e1b4b",border:"1.5px solid #4338ca",borderRadius:"12px",padding:"10px 20px",color:"#818cf8",fontSize:"14px",fontWeight:"700"},function(){S.pinTarget="taskEditor";S.pinInput="";render();},"\u270F\uFE0F Editar tareas"));
+    main.appendChild(thdr);
+    const cats={};
+    U().tasks.forEach(function(t){ cats[t.cat]=cats[t.cat]||[]; cats[t.cat].push(t); });
+    const grid2=div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"28px"});
+    Object.entries(cats).forEach(function(entry){
+      const cat=entry[0]; const tasks=entry[1];
+      const col=div({});
+      const cc=U().catColor[cat]||"#818cf8";
+      col.appendChild(div({fontSize:"12px",fontWeight:"800",letterSpacing:"2px",textTransform:"uppercase",color:cc,marginBottom:"12px",borderLeft:"4px solid "+cc,paddingLeft:"12px"},U().catLabel[cat]||cat));
+      const lst=div({display:"flex",flexDirection:"column",gap:"8px"});
+      tasks.forEach(function(task){
+        const dval=U().completedToday[workingDate()+"-"+task.id]||0;
+        const done=dval===1; const half=dval===0.5;
+        const bc=U().catColor[task.cat]||"#818cf8";
+        const b=btn({
+          background:done?bc+"28":half?bc+"18":"#1e1b4b",
+          border:done?"2px solid "+bc:half?"2px dashed "+bc:"1.5px solid #312e81",
+          borderRadius:"14px",padding:"14px 16px",
+          display:"flex",alignItems:"center",gap:"14px",
+          textAlign:"left",width:"100%",transition:"all .18s"
+        },function(){toggleTask(task);});
+        b.appendChild(div({fontSize:"30px"},task.emoji));
+        b.appendChild(div({flex:"1",fontWeight:"700",fontSize:"16px",color:done?"#c7d2fe":"#e0e7ff",textDecoration:done?"line-through":"none"},task.name+(half?" \u00BD":"")));
+        b.appendChild(div({background:done?bc:half?bc+"88":"#312e81",color:done||half?"#fff":"#fbbf24",borderRadius:"10px",padding:"4px 12px",fontWeight:"800",fontSize:"14px"},half?"+"+fmt(task.points/2)+"\u2B50":"+"+fmt(task.points)+"\u2B50"));
+        b.appendChild(div({fontSize:"22px"},done?"\u2705":half?"\uD83D\uDD36":"\u2B1C"));
+        lst.appendChild(b);
+      });
+      col.appendChild(lst);
+      grid2.appendChild(col);
+    });
+    main.appendChild(grid2);
+    main.appendChild(div({fontSize:"12px",color:"#4338ca",marginTop:"16px",textAlign:"center"},"\u2B1C Toque 1: completo \u2705  \u00B7  Toque 2: medio hecho \uD83D\uDD36  \u00B7  Toque 3: sin hacer \u2B1C"));
+  }
+
+  // ── REWARDS ──────────────────────────────────────────────────────────────
+  if(S.view==="rewards"){
+    const hdr=div({display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"6px"});
+    hdr.appendChild(div({fontSize:"26px",fontWeight:"800",color:"#c7d2fe"},"\uD83C\uDF81 Tienda de Premios"));
+    hdr.appendChild(btn({background:"#1e1b4b",border:"1.5px solid #4338ca",borderRadius:"12px",padding:"10px 20px",color:"#818cf8",fontSize:"14px",fontWeight:"700"},function(){S.pinTarget="editor";S.pinInput="";render();},"\u270F\uFE0F Editar premios"));
+    main.appendChild(hdr);
+    const sub=div({fontSize:"15px",color:"#818cf8",marginBottom:"16px"});
+    sub.appendChild(document.createTextNode("Ten\u00E9s "));
+    sub.appendChild(el("strong",{style:{color:"#fbbf24"}},fmt(U().points)+" \u2B50"));
+    if(U().debt>0) sub.appendChild(el("span",{style:{color:"#f87171"}}," \u00B7 Deuda: "+fmt(U().debt)+" \u2B50"));
+    main.appendChild(sub);
+    if(!canRedeem()){
+      const lock=div({background:"#1e1430",border:"1px solid #4338ca",borderRadius:"14px",padding:"14px 18px",fontSize:"14px",color:"#818cf8",marginBottom:"20px",display:"flex",justifyContent:"space-between",alignItems:"center"});
+      lock.appendChild(div({},"\uD83D\uDD12 Los canjes se habilitan los viernes"));
+      lock.appendChild(btn({background:"#312e81",borderRadius:"10px",padding:"8px 16px",color:"#a5b4fc",fontSize:"13px",fontWeight:"700"},function(){S.pinTarget="exception";S.pinInput="";render();},"\uD83D\uDD10 Excepci\u00F3n"));
+      main.appendChild(lock);
+    }
+    if(S.exceptionMode) main.appendChild(div({background:"#0d2010",border:"1px solid #34d399",borderRadius:"14px",padding:"12px 18px",fontSize:"14px",color:"#34d399",marginBottom:"20px"},"\uD83D\uDD13 Modo excepci\u00F3n activo \u2014 canjes habilitados"));
+    const rgrid=div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"16px"});
+    U().rewards.forEach(function(r){
+      const has=U().points>=r.points;
+      const row=div({background:has?"#0d1f0d":"#1e1b4b",borderRadius:"18px",padding:"18px 20px",border:has?"2px solid #34d399":"1.5px solid #312e81",display:"flex",alignItems:"center",gap:"14px"});
+      row.appendChild(div({fontSize:"42px"},r.emoji));
+      const info=div({flex:"1"});
+      info.appendChild(div({fontWeight:"700",fontSize:"17px"},r.name));
+      const sub2=div({fontSize:"13px",color:"#6366f1",marginTop:"4px"});
+      sub2.appendChild(document.createTextNode(r.points+" \u2B50 \u00B7 "));
+      sub2.appendChild(has?el("span",{style:{color:"#34d399"}},"\u00A1Disponible!"):el("span",{},"Faltan "+fmt(r.points-U().points)+" pts"));
+      info.appendChild(sub2);
+      row.appendChild(info);
+      if(canRedeem()){
+        if(has) row.appendChild(btn({background:"linear-gradient(135deg,#34d399,#059669)",borderRadius:"12px",padding:"10px 16px",color:"#fff",fontWeight:"800",fontSize:"14px"},function(){S.redeemTarget=r;S.redeemDetail="";render();},"Canjear"));
+        else row.appendChild(btn({background:"linear-gradient(135deg,#f472b6,#db2777)",borderRadius:"12px",padding:"10px 16px",color:"#fff",fontWeight:"800",fontSize:"14px"},function(){S.loanTarget=r;S.loanDetail="";render();},"\uD83E\uDD1D Pr\u00E9stamo"));
+      } else {
+        row.appendChild(div({fontSize:"26px",opacity:"0.35"},"\uD83D\uDD12"));
+      }
+      rgrid.appendChild(row);
+    });
+    main.appendChild(rgrid);
+  }
+
+  // ── HISTORY ──────────────────────────────────────────────────────────────
+  if(S.view==="history"){
+    main.appendChild(div({fontSize:"26px",fontWeight:"800",marginBottom:"24px",color:"#c7d2fe"},"\uD83D\uDCCB Historial"));
+    if(U().history.length===0){
+      main.appendChild(div({color:"#4338ca",textAlign:"center",padding:"60px",fontSize:"16px"},"\u00A1Todav\u00EDa no hay actividad registrada!"));
+    } else {
+      const hgrid=div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"});
+      U().history.forEach(function(h){
+        const row=div({background:"#1e1b4b",borderRadius:"14px",padding:"12px 16px",display:"flex",alignItems:"flex-start",gap:"12px",border:h.type==="loan"?"1px solid #f87171":h.type==="redeem"?"1px solid #34d399":"1px solid #312e81"});
+        row.appendChild(div({fontSize:"26px",marginTop:"2px"},h.emoji));
+        const info=div({flex:"1"});
+        info.appendChild(div({fontWeight:"600",fontSize:"15px"},h.task));
+        if(h.detail) info.appendChild(div({fontSize:"13px",color:"#a5b4fc",marginTop:"3px"},"\u2192 "+h.detail));
+        if(h.type==="loan") info.appendChild(div({fontSize:"12px",color:"#f87171",marginTop:"3px"},"Deuda: "+fmt(h.debtAmount)+" \u2B50"));
+        info.appendChild(div({fontSize:"11px",color:"#4338ca",marginTop:"4px"},h.when));
+        row.appendChild(info);
+        row.appendChild(div({fontWeight:"800",fontSize:"16px",color:h.points>0?"#34d399":"#f87171",whiteSpace:"nowrap",marginTop:"2px"},(h.points>0?"+":"")+fmt(h.points)+"\u2B50"));
+        hgrid.appendChild(row);
+      });
+      main.appendChild(hgrid);
+    }
+  }
+
+  // ── INFO ─────────────────────────────────────────────────────────────────
+          if(S.view==="info"){
+    main.appendChild(div({fontSize:"26px",fontWeight:"800",marginBottom:"24px",color:"#c7d2fe"},"📖 Instrucciones"));
+
+    var sections = [
+      {
+        emoji:"💾", color:"#60a5fa", title:"Cómo acceder y guardar la app",
+        items:[
+          "Abrí el link que te compartieron en Chrome, Edge (PC) o Safari (iPad/iPhone)",
+          "Para guardar en PC: Ctrl+S (Windows) o Cmd+S (Mac) → 'Página web completa'",
+          "Para iPad/iPhone: en Safari tocá □↑ → 'Añadir a pantalla de inicio' → queda como app",
+          "Una vez guardada, abrila siempre desde el mismo navegador en el mismo dispositivo",
+          "Los datos se guardan solos — no hace falta hacer nada especial",
+          "⚠️ No borres el historial/caché del navegador o perdés los puntos acumulados"
+        ]
+      },
+      {
+        emoji:"🔒", color:"#34d399", title:"Tus cambios son tuyos — nadie te los pisa",
+        items:[
+          "Cada familia tiene su propia copia local con sus propios datos",
+          "Cuando el administrador sube una versión nueva al link, NO afecta tus datos guardados",
+          "Tus tareas editadas, premios personalizados y puntos acumulados quedan intactos",
+          "Podés adaptar completamente la app a tu familia sin miedo a perder nada"
+        ]
+      },
+      {
+        emoji:"🔐", color:"#f472b6", title:"Modo excepción (Panel de padres)",
+        items:[
+          "El PIN por defecto es 0000 — cambialo apenas empezás desde el botón '+' en la sidebar",
+          "Activá el modo excepción con el botón '🔐 Modo excepción' en la sidebar → ingresar PIN",
+          "El modo excepción se desactiva automáticamente a los 5 minutos por seguridad",
+          "También podés desactivarlo manualmente tocando '🔓 Desactivar excepción'",
+          "Con el modo excepción activo NO se vuelve a pedir el PIN para ninguna acción de padres",
+          "El modo excepción habilita: editar tareas, editar premios, gestión de usuarios, canjes fuera del día configurado y cargar días anteriores"
+        ]
+      },
+      {
+        emoji:"📅", color:"#fbbf24", title:"Día y hora de canje / Día anterior",
+        items:[
+          "Por defecto los canjes se habilitan los viernes a las 19hs",
+          "Para cambiar el día y hora: activá modo excepción → botón '+' → panel de usuarios → sección '📅 Día y hora de canje'",
+          "Para cargar tareas de un día anterior: tocá '📅 Día anterior' en el menú lateral (requiere modo excepción)",
+          "Podés cargar tareas de hasta 7 días atrás — los puntos se suman normalmente",
+          "Una vez cargado el día anterior, el título de Tareas se pone en amarillo para que sepas que no es hoy",
+          "Tocá '✕ Volver a hoy' para volver a la fecha actual"
+        ]
+      },
+      {
+        emoji:"✅", color:"#fb923c", title:"Editar tareas y categorías",
+        items:[
+          "Activá modo excepción → ir a Tareas → aparece el botón '✏️ Editar tareas'",
+          "Podés cambiar el emoji (selector visual), nombre y puntos de cada tarea",
+          "Podés cambiar la categoría de cada tarea desde el selector desplegable",
+          "Para agregar una tarea nueva: completá el formulario al final y tocá '+ Agregar'",
+          "Para crear una categoría nueva: sección 'Categorías' dentro del editor — elegí nombre y color",
+          "Todos estos cambios quedan guardados y no se pierden con actualizaciones"
+        ]
+      },
+      {
+        emoji:"🎁", color:"#fbbf24", title:"Editar premios y puntos necesarios",
+        items:[
+          "Activá modo excepción → ir a Premios → aparece el botón '✏️ Editar premios'",
+          "Podés cambiar cuántos puntos cuesta cada premio — ajustalo a lo que le resulte alcanzable",
+          "Podés agregar premios propios (salidas, actividades, cosas que le gusten a tu familia)",
+          "Para eliminar un premio: botón 🗑️ → confirmar",
+          "Todos estos cambios quedan guardados y no se pierden con actualizaciones"
+        ]
+      },
+      {
+        emoji:"⭐", color:"#818cf8", title:"Sistema de puntos y canjes",
+        items:[
+          "Tocá una tarea 1 vez: completo ✅ — suma los puntos enteros",
+          "Tocá una tarea 2 veces: medio hecho 🔶 — suma la mitad de los puntos",
+          "Tocá una tarea 3 veces: sin hacer ⬜ — quita lo que había sumado",
+          "Si no tiene puntos suficientes para un premio podés hacer un préstamo 🤝",
+          "El préstamo se descuenta automáticamente de las próximas tareas completadas",
+          "Al canjear escribís exactamente qué se canjeó (ej: helado de chocolate) — queda en el historial"
+        ]
+      },
+      {
+        emoji:"🔁", color:"#34d399", title:"Puntos reseteados o perdidos",
+        items:[
+          "Si se borraron los puntos (cambio de navegador, limpieza de caché, etc.)",
+          "Activá modo excepción → botón '+' → panel de usuarios → botón '✏️ Pts' al lado del nombre",
+          "Ingresá la cantidad de puntos que tenía acumulados — se aplica de inmediato",
+          "Esto también sirve para arrancar con un saldo inicial si el chico/a ya venía acumulando",
+          "⚠️ Siempre usá el mismo navegador en el mismo dispositivo para evitar pérdida de datos"
+        ]
+      },
+      {
+        emoji:"📸", color:"#f472b6", title:"Foto de perfil",
+        items:[
+          "Tocá el círculo con el ícono 🌟 en la sidebar izquierda para subir una foto",
+          "También podés cambiarlo desde el panel de usuarios tocando el círculo de cada perfil",
+          "Al subir la foto se abre un recortador: arrastrá para mover, pellizco o barra para zoom",
+          "Tocá '✅ Confirmar' para guardar — aparece en la sidebar y en el saludo de inicio",
+          "La foto se guarda localmente junto con los demás datos"
+        ]
+      },
+      {
+        emoji:"👥", color:"#a78bfa", title:"Múltiples usuarios",
+        items:[
+          "Podés tener varios perfiles (uno por hijo/a) — cada uno con sus propios puntos e historial",
+          "Para agregar un usuario: activá modo excepción → botón '+' → panel de usuarios → Agregar",
+          "Cambiá entre usuarios tocando su nombre/foto en la parte superior de la sidebar",
+          "Cada usuario tiene sus propias tareas completadas, historial y puntos",
+          "Para eliminar un usuario: panel de usuarios → botón 🗑️ (solo usuarios que no sean el activo)"
+        ]
+      },
+    ];
+
+    sections.forEach(function(sec){
+      var card=div({background:"#1e1b4b",borderRadius:"18px",padding:"20px 24px",marginBottom:"18px",border:"1px solid #312e81"});
+      var chdr=div({display:"flex",alignItems:"center",gap:"12px",marginBottom:"14px",paddingBottom:"12px",borderBottom:"1px solid #312e81"});
+      chdr.appendChild(div({fontSize:"28px",background:sec.color+"22",borderRadius:"10px",padding:"6px 10px"},sec.emoji));
+      chdr.appendChild(div({fontWeight:"800",fontSize:"17px",color:sec.color},sec.title));
+      card.appendChild(chdr);
+      var ol=el("ol",{style:{margin:"0",paddingLeft:"20px",display:"flex",flexDirection:"column",gap:"8px"}});
+      sec.items.forEach(function(item){
+        var li=el("li",{style:{fontSize:"13px",color:"#a5b4fc",lineHeight:"1.6"}});
+        li.textContent=item;
+        ol.appendChild(li);
+      });
+      card.appendChild(ol);
+      main.appendChild(card);
+    });
+  }
+  return main;
+}
+
+function render(){
+  saveState();
+  const root=document.getElementById("root");
+  root.innerHTML="";
+  if(S.confetti)root.appendChild(confettiEl());
+  if(S.toast)root.appendChild(toastEl());
+
+  // Friday banner
+  if(S._fridayBanner){
+    const fb=div({position:"fixed",inset:"0",zIndex:"3000",background:"rgba(15,10,46,0.94)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"20px",textAlign:"center"});
+    fb.appendChild(div({fontSize:"100px",animation:"bigBounce .5s infinite alternate"},"🎉"));
+    fb.appendChild(div({fontSize:"48px",fontWeight:"900",color:"#fbbf24"},"¡Es viernes!"));
+    fb.appendChild(div({fontSize:"20px",color:"#c7d2fe",maxWidth:"400px",lineHeight:"1.6"},"¡Terminó la semana! Hora de ver tus puntos y canjear lo que ganaste 🌟"));
+    fb.appendChild(btn({marginTop:"12px",background:"linear-gradient(135deg,#818cf8,#f472b6)",borderRadius:"20px",padding:"18px 48px",color:"#fff",fontWeight:"800",fontSize:"22px"},()=>{S._fridayBanner=false;S.view="rewards";render();},"¡Ver mis premios! 🎁"));
+    root.appendChild(fb);
+    return;
+  }
+
+  const app=div({display:"flex",height:"100vh",width:"100vw",overflow:"hidden"});
+  app.appendChild(renderSidebar());
+  app.appendChild(renderMain());
+  root.appendChild(app);
+  renderModals(root);
+}
+
+window.addEventListener("DOMContentLoaded",()=>{
+  loadState();
+  if(isFridayEvening()&&!S.fridayShown){
+    setTimeout(()=>{S._fridayBanner=true;S.fridayShown=true;render();},800);
+  }
+  render();
+});
+
+
+// ── Photo cropper ────────────────────────────────────────────────────────────
+function openCropper(dataUrl, onConfirm){
+  const overlay = div({position:"fixed",inset:"0",background:"rgba(0,0,0,0.92)",zIndex:"4000",
+    display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"16px"});
+
+  const SIZE = 280; // circle display size
+  let scale = 1, ox = 0, oy = 0; // offset = translation of image inside frame
+  let dragging = false, lastX = 0, lastY = 0;
+  let imgW = 0, imgH = 0; // natural image display size at scale=1
+
+  const title = div({color:"#c7d2fe",fontWeight:"700",fontSize:"16px"},"Ajustá la foto");
+  overlay.appendChild(title);
+
+  // circular clip frame
+  const frame = div({
+    width:SIZE+"px", height:SIZE+"px", borderRadius:"50%",
+    overflow:"hidden", position:"relative",
+    border:"3px solid #818cf8", boxShadow:"0 0 0 4px #0f0a2e",
+    background:"#1e1b4b", cursor:"grab", flexShrink:"0"
+  });
+
+  const img = el("img",{src:dataUrl,style:{
+    position:"absolute", transformOrigin:"0 0",
+    userSelect:"none", pointerEvents:"none", draggable:"false"
+  }});
+  frame.appendChild(img);
+  overlay.appendChild(frame);
+
+  function clamp(){
+    const dw = imgW * scale, dh = imgH * scale;
+    // keep image covering the circle
+    if(ox > 0) ox = 0;
+    if(oy > 0) oy = 0;
+    if(ox < SIZE - dw) ox = Math.min(0, SIZE - dw);
+    if(oy < SIZE - dh) oy = Math.min(0, SIZE - dh);
+  }
+
+  function applyTransform(){
+    img.style.transform = "translate("+ox+"px,"+oy+"px) scale("+scale+")";
+  }
+
+  img.addEventListener("load", ()=>{
+    imgW = img.naturalWidth;
+    imgH = img.naturalHeight;
+    // fit so image covers circle
+    const fit = Math.max(SIZE/imgW, SIZE/imgH);
+    scale = fit;
+    ox = (SIZE - imgW*scale)/2;
+    oy = (SIZE - imgH*scale)/2;
+    applyTransform();
+  });
+
+  // drag
+  frame.addEventListener("mousedown", e=>{dragging=true;lastX=e.clientX;lastY=e.clientY;frame.style.cursor="grabbing";e.preventDefault();});
+  window.addEventListener("mousemove", e=>{if(!dragging)return;ox+=e.clientX-lastX;oy+=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;clamp();applyTransform();});
+  window.addEventListener("mouseup", ()=>{dragging=false;frame.style.cursor="grab";});
+
+  // touch drag
+  frame.addEventListener("touchstart", e=>{const t=e.touches[0];lastX=t.clientX;lastY=t.clientY;e.preventDefault();},{passive:false});
+  frame.addEventListener("touchmove", e=>{const t=e.touches[0];ox+=t.clientX-lastX;oy+=t.clientY-lastY;lastX=t.clientX;lastY=t.clientY;clamp();applyTransform();e.preventDefault();},{passive:false});
+
+  // pinch zoom
+  let lastDist = 0;
+  frame.addEventListener("touchstart", e=>{if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;lastDist=Math.hypot(dx,dy);}},{passive:true});
+  frame.addEventListener("touchmove", e=>{
+    if(e.touches.length===2){
+      const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;
+      const dist=Math.hypot(dx,dy);
+      const delta=dist/lastDist;
+      lastDist=dist;
+      const newScale=Math.max(scale*(1/1.5), Math.min(scale*3, scale*delta));
+      // zoom toward center
+      const cx=SIZE/2, cy=SIZE/2;
+      ox=cx-(cx-ox)*(newScale/scale);
+      oy=cy-(cy-oy)*(newScale/scale);
+      scale=newScale;
+      clamp();applyTransform();
+    }
+  },{passive:true});
+
+  // scroll wheel zoom on desktop
+  frame.addEventListener("wheel", e=>{
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? 1.08 : 0.93;
+    const newScale = Math.max(imgW?SIZE/imgW*0.9:0.5, Math.min(scale*4, scale*delta));
+    const cx=SIZE/2,cy=SIZE/2;
+    ox=cx-(cx-ox)*(newScale/scale);
+    oy=cy-(cy-oy)*(newScale/scale);
+    scale=newScale;
+    clamp();applyTransform();
+  },{passive:false});
+
+  // zoom slider
+  const sliderWrap = div({display:"flex",alignItems:"center",gap:"12px",width:SIZE+"px"});
+  sliderWrap.appendChild(span({color:"#818cf8",fontSize:"18px"},"🔍"));
+  const slider = el("input",{type:"range",min:"50",max:"300",value:"100",
+    style:{flex:"1",accentColor:"#818cf8",height:"6px",cursor:"pointer"}});
+  slider.addEventListener("input", ()=>{
+    const pct = parseInt(slider.value)/100;
+    const base = imgW ? Math.max(SIZE/imgW, SIZE/imgH) : 1;
+    const newScale = base * pct;
+    const cx=SIZE/2,cy=SIZE/2;
+    ox=cx-(cx-ox)*(newScale/scale);
+    oy=cy-(cy-oy)*(newScale/scale);
+    scale=newScale;
+    clamp();applyTransform();
+  });
+  sliderWrap.appendChild(slider);
+  sliderWrap.appendChild(span({color:"#818cf8",fontSize:"22px"},"🔍"));
+  overlay.appendChild(sliderWrap);
+
+  const hint = div({color:"#6366f1",fontSize:"13px"},"Arrastrá para mover · Pellizco o rueda para zoom");
+  overlay.appendChild(hint);
+
+  // buttons
+  const btns = div({display:"flex",gap:"12px"});
+  btns.appendChild(btn({background:"#312e81",border:"none",borderRadius:"12px",padding:"12px 24px",color:"#a5b4fc",fontWeight:"700",fontSize:"15px"},()=>overlay.remove(),"Cancelar"));
+  btns.appendChild(btn({background:"linear-gradient(135deg,#34d399,#059669)",border:"none",borderRadius:"12px",padding:"12px 28px",color:"#fff",fontWeight:"800",fontSize:"15px"},()=>{
+    // render to canvas
+    const canvas = el("canvas",{width:SIZE,height:SIZE});
+    const ctx2 = canvas.getContext("2d");
+    ctx2.beginPath();
+    ctx2.arc(SIZE/2,SIZE/2,SIZE/2,0,Math.PI*2);
+    ctx2.clip();
+    ctx2.drawImage(img, ox, oy, imgW*scale, imgH*scale);
+    const result = canvas.toDataURL("image/jpeg",0.85);
+    overlay.remove();
+    onConfirm(result);
+  },"✅ Confirmar"));
+  overlay.appendChild(btns);
+
+  document.body.appendChild(overlay);
+}
+
+function openAvatarUpload(){
+  const fileInp = el("input",{type:"file",accept:"image/*",style:{display:"none"}});
+  fileInp.addEventListener("change", e=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      openCropper(ev.target.result, cropped => {
+        U().avatar = cropped;
+        render();
+      });
+    };
+    reader.readAsDataURL(file);
+  });
+  document.body.appendChild(fileInp);
+  fileInp.click();
+  setTimeout(()=>fileInp.remove(), 60000);
+}
+</script>
+<script>
+// Service Worker for offline
+if("serviceWorker" in navigator){
+  var swCode = [
+    "self.addEventListener('install',function(e){self.skipWaiting();});",
+    "self.addEventListener('activate',function(e){clients.claim();});",
+    "self.addEventListener('fetch',function(e){",
+    "  e.respondWith(caches.open('puntos-v1').then(function(cache){",
+    "    return cache.match(e.request).then(function(cached){",
+    "      var fresh=fetch(e.request).then(function(r){cache.put(e.request,r.clone());return r;}).catch(function(){return cached;});",
+    "      return cached||fresh;",
+    "    });",
+    "  }));",
+    "});"
+  ].join("\n");
+  var blob = new Blob([swCode], {type:"application/javascript"});
+  var swUrl = URL.createObjectURL(blob);
+  navigator.serviceWorker.register(swUrl).catch(function(){});
+}
+
+// iOS install banner
+window.addEventListener("DOMContentLoaded", function(){
+  var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  var isStandalone = window.navigator.standalone;
+  var dismissed = localStorage.getItem("iosBanner");
+  if(isIOS && !isStandalone && !dismissed){
+    var banner = document.createElement("div");
+    banner.style.cssText = "position:fixed;bottom:0;left:0;right:0;background:#1e1b4b;border-top:2px solid #818cf8;padding:14px 20px;z-index:9998;display:flex;align-items:center;gap:12px;font-family:-apple-system,sans-serif;";
+    var star = document.createElement("span");
+    star.style.fontSize = "28px";
+    star.textContent = "⭐";
+    var txt = document.createElement("div");
+    txt.style.cssText = "flex:1;color:#e0e7ff;font-size:13px;";
+    txt.innerHTML = "<strong>Instalá la app</strong><br>Tocá <strong>□↑</strong> y luego <strong>Añadir a pantalla de inicio</strong>";
+    var closeB = document.createElement("button");
+    closeB.style.cssText = "background:#4338ca;border:none;border-radius:8px;padding:6px 12px;color:#fff;font-weight:700;font-size:13px;cursor:pointer;";
+    closeB.textContent = "✕";
+    closeB.addEventListener("click", function(){
+      localStorage.setItem("iosBanner","1");
+      banner.remove();
+    });
+    banner.appendChild(star);
+    banner.appendChild(txt);
+    banner.appendChild(closeB);
+    document.body.appendChild(banner);
+  }
+});
+</script>
+</body>
+</html>
